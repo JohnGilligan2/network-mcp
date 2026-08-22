@@ -1,0 +1,105 @@
+# network-mcp — Portainer stack.
+#
+# EVERY variable the code reads must appear in the environment block below.
+# Portainer stack variables only SUBSTITUTE into this file; they are not
+# auto-injected. A missing entry here = a silent fallback to the default.
+#
+# PUT DEVICE PASSWORDS IN THE _B64 VARIABLES. Portainer substitutes a stack
+# variable into this file and Compose then runs its OWN expansion on the
+# result, so a `$` inside a password is read as an undefined variable and
+# silently deleted. The symptom is a login that fails with no error anywhere.
+# Base64 never emits a `$`.
+services:
+  network-mcp:
+    build: .
+    image: network-mcp:latest
+    container_name: network-mcp
+    restart: unless-stopped
+    # Join the pre-existing default bridge instead of letting compose create a
+    # per-stack network. The deploy host has EXHAUSTED docker's default address
+    # pools (all 15 of 172.17-31/16 and all 16 of 192.168.x/20), so stack
+    # creation otherwise fails with "all predefined address pools have been
+    # fully subnetted". Safe here because this is a single-service stack that
+    # talks outbound by IP and is reached only on its published port.
+    network_mode: bridge
+    ports:
+      - "${MCP_HOST_PORT:-8120}:8000"
+    environment:
+      # --- transport ---
+      MCP_TRANSPORT: http
+      MCP_BIND_HOST: 0.0.0.0
+      MCP_PORT: 8000
+      MCP_PATH: /mcp
+      # --- Entra (resource-server mode; NO client secret here) ---
+      MCP_AUTH_ENABLED: "${MCP_AUTH_ENABLED:-true}"
+      MCP_BASE_URL: "${MCP_BASE_URL}"
+      ENTRA_TENANT_ID: "${ENTRA_TENANT_ID}"
+      ENTRA_CLIENT_ID: "${ENTRA_CLIENT_ID}"
+      ENTRA_IDENTIFIER_URI: "${ENTRA_IDENTIFIER_URI}"
+      ENTRA_SCOPE_NAME: "${ENTRA_SCOPE_NAME:-access_as_user}"
+      ENTRA_REQUIRED_SCOPES: "${ENTRA_REQUIRED_SCOPES:-access_as_user}"
+      ENTRA_ADVERTISE_OFFLINE_ACCESS: "true"
+      # --- WHERE it may log in (the load-bearing security control) ---
+      NETMCP_ALLOWED_CIDRS: "${NETMCP_ALLOWED_CIDRS}"
+      NETMCP_DENY_CIDRS: "${NETMCP_DENY_CIDRS:-}"
+      # --- SSH relay: the container has no route to the management networks ---
+      # shell = ordinary login + `telnet <ip>` typed at the prompt; needs
+      # nothing configured on the relay. forward = direct-tcpip channels.
+      NETMCP_JUMP_MODE: "${NETMCP_JUMP_MODE:-shell}"
+      NETMCP_JUMP_HOST: "${NETMCP_JUMP_HOST:-}"
+      NETMCP_JUMP_PORT: "${NETMCP_JUMP_PORT:-22}"
+      NETMCP_JUMP_USERNAME: "${NETMCP_JUMP_USERNAME:-}"
+      # Only the _B64 form is wired through, on purpose. The code also reads a
+      # plain NETMCP_JUMP_PASSWORD, but exposing it as a stack variable would
+      # reintroduce the Compose `$`-expansion trap that silently deletes part of
+      # a secret. Plaintext stays a local-.env convenience; Portainer is B64.
+      NETMCP_JUMP_PASSWORD_B64: "${NETMCP_JUMP_PASSWORD_B64:-}"
+      NETMCP_JUMP_KEY_FILE: "${NETMCP_JUMP_KEY_FILE:-}"
+      NETMCP_JUMP_KEY_PASSPHRASE_B64: "${NETMCP_JUMP_KEY_PASSPHRASE_B64:-}"
+      NETMCP_JUMP_HOST_KEY_SHA256: "${NETMCP_JUMP_HOST_KEY_SHA256:-}"
+      NETMCP_JUMP_TIMEOUT: "${NETMCP_JUMP_TIMEOUT:-20}"
+      # --- device credentials (use the _B64 forms) ---
+      NETMCP_CRED_PROFILES: "${NETMCP_CRED_PROFILES:-default}"
+      NETMCP_CRED_DEFAULT_USERNAME: "${NETMCP_CRED_DEFAULT_USERNAME}"
+      NETMCP_CRED_DEFAULT_PASSWORD_B64: "${NETMCP_CRED_DEFAULT_PASSWORD_B64}"
+      NETMCP_CRED_DEFAULT_ENABLE_SECRET_B64: "${NETMCP_CRED_DEFAULT_ENABLE_SECRET_B64:-}"
+      NETMCP_CRED_LEGACY_USERNAME: "${NETMCP_CRED_LEGACY_USERNAME:-}"
+      NETMCP_CRED_LEGACY_PASSWORD_B64: "${NETMCP_CRED_LEGACY_PASSWORD_B64:-}"
+      NETMCP_CRED_LEGACY_ENABLE_SECRET_B64: "${NETMCP_CRED_LEGACY_ENABLE_SECRET_B64:-}"
+      # --- transport behaviour ---
+      NETMCP_ALLOW_SSH: "${NETMCP_ALLOW_SSH:-true}"
+      NETMCP_ALLOW_TELNET: "${NETMCP_ALLOW_TELNET:-true}"
+      # telnet_first: the ADTRANs are Telnet by default and the older Ciscos
+      # have no SSH at all, so leading with SSH spends a connect timeout per
+      # device. SSH stays as the fallback.
+      NETMCP_DEFAULT_TRANSPORT: "${NETMCP_DEFAULT_TRANSPORT:-telnet_first}"
+      # Optional overrides for the line typed at the relay's shell, in case the
+      # relay ever wants a wrapper script. Empty = built-in templates.
+      NETMCP_RELAY_TELNET_CMD: "${NETMCP_RELAY_TELNET_CMD:-}"
+      NETMCP_RELAY_SSH_CMD: "${NETMCP_RELAY_SSH_CMD:-}"
+      NETMCP_SSH_PORT: "${NETMCP_SSH_PORT:-22}"
+      NETMCP_TELNET_PORT: "${NETMCP_TELNET_PORT:-23}"
+      NETMCP_CONN_TIMEOUT: "${NETMCP_CONN_TIMEOUT:-15}"
+      NETMCP_READ_TIMEOUT: "${NETMCP_READ_TIMEOUT:-60}"
+      NETMCP_GLOBAL_DELAY_FACTOR: "${NETMCP_GLOBAL_DELAY_FACTOR:-1.0}"
+      # --- output handling ---
+      NETMCP_REDACT_SECRETS: "${NETMCP_REDACT_SECRETS:-true}"
+      NETMCP_MAX_OUTPUT_CHARS: "${NETMCP_MAX_OUTPUT_CHARS:-200000}"
+      NETMCP_MAX_CONCURRENT_DEVICES: "${NETMCP_MAX_CONCURRENT_DEVICES:-8}"
+      # --- optional on-disk archive (unredacted; see archive.py) ---
+      NETMCP_BACKUP_DIR: "${NETMCP_BACKUP_DIR:-}"
+      NETMCP_BACKUP_REDACTED: "${NETMCP_BACKUP_REDACTED:-false}"
+    volumes:
+      # Only used when NETMCP_BACKUP_DIR=/archive. Holds PLAINTEXT device
+      # configs including secrets — back it up and treat it accordingly.
+      - network-mcp-archive:/archive
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  network-mcp-archive:

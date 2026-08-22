@@ -1,0 +1,16 @@
+# PIN fastmcp EXACTLY, not a range. A floating >=3.4,<4 on o365logs-mcp drifted
+# on a Portainer rebuild to a newer 3.x that changed token/session handling, and
+# the claude.ai connector started re-prompting for auth on every tool call.
+fastmcp==3.4.5
+# mcp 2.0.0 is a breaking major (FastMCP -> MCPServer). fastmcp-slim already
+# caps it; state the constraint here so it is ours.
+mcp<2
+pydantic>=2.7
+python-dotenv>=1.0
+
+# Device CLI transport. Pinned for the same reason as fastmcp: Portainer
+# rebuilds the image from scratch on every push, so a range lets PyPI decide
+# how our sessions behave. Bumping is a deliberate act — change the pin,
+# redeploy, and re-verify against one Cisco and one ADTRAN before trusting it.
+# Brings paramiko (SSH), textfsm/ntc-templates and the telnet drivers.
+netmiko==4.4.0
